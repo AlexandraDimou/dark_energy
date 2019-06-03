@@ -22,50 +22,29 @@ import lmfit
 import astropy
 import astropy.units as u
 import corner
-from astropy.cosmology import w0waCDM
+from astropy.cosmology import Flatw0waCDM
 ```
 
 ```{python}
-from scipy import integrate
-```
-
-```{python}
-# My own version of code that determines the Hubble parameter at different redshifts
-def H_zz(z,H0,Om,w0,w1):
-    Ode=1-Om
-    # quad only accepts scalars, so need to use a list comprehension to run through the whole array of z
-    b = lambda zz : (1+w0+w1*(zz/(1+zz)))/(1+zz)
-    b1 = [integrate.quadrature(b,0,zi) for zi in z]
-    # Returns a list, so we convert to a numpy array
-    B1=np.array(b1)
-    x=(Om*(1+z)**3) + Ode*np.exp(3*B1[:,0])
-    Hzz=H0*np.sqrt(x)
-    return Hzz
-```
-
-```{python}
-# Astropy.cosmology version. Should be the same as above, but faster.
+# Astropy.cosmology version.Here I am using FlatwowaCDM because it has less parameters.(no Ode)
 def Hz1(z1,H01,Om1,w01,wa1):
-    cosmo = w0waCDM(H0=H01* u.km / u.s / u.Mpc, Om0=Om1,Ode0=1.0-Om1,w0=w01,wa=wa1)
-#     E=cosmo.efunc(z1)
+    cosmo =Flatw0waCDM(H0=H01* u.km / u.s / u.Mpc, Om0=Om1,w0=w01,wa=wa1) 
+    #the redshift dependence of the dark energy density:
     I = cosmo.de_density_scale(z1)
-    E = np.sqrt((Om1*(1+z1)**3) + (1-Om1)*I)
+    E = np.sqrt((Om1*(1+z1)**3.) + (1.-Om1)*I)
     HZ1 = H01*E
-#     HZ1 = H01*I
     return HZ1
-
 ```
 
 ```{python}
 #Define  random redshifts
-num_zs = 70
+num_zs = 1000
 zs= np.linspace(0.01, 3., num=num_zs)
 ```
 
 ```{python}
 #From Planck observations for CPL mode
 O_m= 0.3029
-O_de= 1-O_m
 w_0= -0.9414
 w_1= -0.4303
 H_0= 68.5265
@@ -94,13 +73,12 @@ plt.plot(zs,H_zz, '.')
 p = lmfit.Parameters()
 p.add_many(('Om1',0.3,True,0.,2.),
            ('H01',70.0,True,50.,100.),
-#            ('Ode1',0.7,True,0.,2.),
            ('w01',-1.0,True,-2.,2.),
-           ('wa1',-0.1,True,-1.,1.))
+           ('wa1',-0.21,True,-1.,1.))
 
 def residual(p):
     v = p.valuesdict()
-    return (Hz1(zs,v['H01'],v['Om1'],v['w01'],v['wa1'])-H_zz)/error_sigma
+    return (Hz1(zs,v['H01'],v['Om1'],v['w01'],v['wa1'])/(1+zs)-H_zz)/error_sigma
 ```
 
 ```{python}
@@ -111,10 +89,9 @@ mi = lmfit.minimize(residual, p, method='leastsq', nan_policy='omit')
 plt.errorbar(zs,H_zz,yerr=error_sigma,fmt='o',alpha=0.2)
 bestOm1 = mi.params.valuesdict()['Om1']
 bestH01 = mi.params.valuesdict()['H01']
-# bestOde1= mi.params.valuesdict()['Ode1']
 bestw01 = mi.params.valuesdict()['w01']
 bestwa1 = mi.params.valuesdict()['wa1']
-plt.plot(zs,Hz1(zs,bestH01,bestOm1,bestw01,bestwa1))
+plt.plot(zs,Hz1(zs,bestH01,bestOm1,bestw01,bestwa1)/(1+zs))
 plt.plot(zs,Hz)
 plt.xlabel('Redshift (z)')
 plt.ylabel('Comoving Hubble parameter')
@@ -122,8 +99,8 @@ lmfit.report_fit(mi)
 ```
 
 ```{python}
-res = lmfit.minimize(residual, method='emcee', nan_policy='omit', burn=100, steps=5000,thin=1, nwalkers=10,
-                         params=p, is_weighted=True, reuse_sampler=False)
+res = lmfit.minimize(residual, method='emcee', nan_policy='omit', burn=300, steps=1500,thin=1,
+                         params=p, is_weighted=True)
 ```
 
 ```{python}
@@ -131,7 +108,8 @@ corner.corner(res.flatchain,labels=res.var_names, truths=list(res.params.valuesd
 ```
 
 ```{python}
-plt.plot(res.flatchain.H01)
+# plt.plot(res.flatchain.H01)
+plt.plot(res.flatchain.wa1)
 ```
 
 ```{python}
